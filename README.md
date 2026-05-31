@@ -51,29 +51,49 @@ pi-nincompoop-guys/
 └── pi-logfire-writer/    # OTel writer extension (+ README, tests, examples/)
 ```
 
-## Quick start
+## Install with pi
 
-Each plugin is a self-contained pi extension. Clone, install its deps, and load
-it with `pi -e`:
+Both plugins install together in one command. The repo is private, so this uses
+your existing git credentials:
+
+```bash
+pi install git:github.com/runyaga/pi-nincompoop-guys
+```
+
+This clones the repo, installs dependencies, and registers **both** extensions
+(reader + writer) from the root `package.json` into your pi settings. Then set
+the tokens and run pi:
+
+```bash
+export LOGFIRE_READ_TOKEN="pylf_v2_us_..._read"     # reader: project:read + project:read_otlp
+export LOGFIRE_WRITE_TOKEN="pylf_v2_us_..._write"   # writer: project:write + project:write_otlp
+pi
+```
+
+Manage it like any pi package:
+
+```bash
+pi list                                                # confirm install
+pi update git:github.com/runyaga/pi-nincompoop-guys    # update / move to a new ref
+pi remove git:github.com/runyaga/pi-nincompoop-guys    # uninstall
+pi install -l git:github.com/runyaga/pi-nincompoop-guys  # project-local (.pi/settings.json)
+```
+
+### Install just one plugin
+
+Each subfolder is a standalone pi package. Clone, then install by local path:
 
 ```bash
 git clone https://github.com/runyaga/pi-nincompoop-guys
-cd pi-nincompoop-guys
-
-# reader
-( cd pi-logfire-reader && npm install )
-# writer
-( cd pi-logfire-writer && npm install )
-
-export LOGFIRE_READ_TOKEN="pylf_v2_us_..._read"     # reader
-export LOGFIRE_WRITE_TOKEN="pylf_v2_us_..._write"   # writer
-
-pi -e ./pi-logfire-reader/index.ts -e ./pi-logfire-writer/index.ts
+pi install ./pi-nincompoop-guys/pi-logfire-reader      # reader only
+pi install ./pi-nincompoop-guys/pi-logfire-writer      # writer only
 ```
 
-To wire them in permanently, add the two `index.ts` paths to the `extensions`
-array in `~/.pi/agent/settings.json`. See each plugin's README for full
-configuration and tokens.
+### Try without installing
+
+```bash
+pi -e ./pi-logfire-reader/index.ts -e ./pi-logfire-writer/index.ts
+```
 
 ## License
 

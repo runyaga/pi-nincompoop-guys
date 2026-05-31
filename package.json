@@ -1,0 +1,39 @@
+{
+  "name": "pi-nincompoop-guys",
+  "version": "0.2.0",
+  "description": "pi coding-agent plugins for Pydantic Logfire: a reader (query telemetry via MCP) and a writer (emit pydantic-ai-shaped OTel traces).",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "logfire",
+    "pydantic",
+    "mcp",
+    "opentelemetry",
+    "otel",
+    "observability"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runyaga/pi-nincompoop-guys.git"
+  },
+  "homepage": "https://github.com/runyaga/pi-nincompoop-guys#readme",
+  "pi": {
+    "extensions": [
+      "./pi-logfire-reader/index.ts",
+      "./pi-logfire-writer/index.ts"
+    ]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/sdk-trace-base": "^1.30.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
