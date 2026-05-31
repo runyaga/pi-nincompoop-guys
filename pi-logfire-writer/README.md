@@ -32,7 +32,8 @@ the running conversation across turns.
 ## Requirements
 
 - `pi` (`@earendil-works/pi-coding-agent`)
-- A Logfire **write token** (`project:write` scope)
+- A Logfire **write token** with the **`project:write`** and **`project:write_otlp`**
+  scopes (`project:write_otlp` is what authorizes OTLP trace ingestion)
 - Node.js ≥ 18
 
 ## Install
@@ -48,7 +49,7 @@ pi -e ./index.ts
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `LOGFIRE_WRITE_TOKEN` | yes | — | Logfire write token. `LOGFIRE_TOKEN` also accepted. |
+| `LOGFIRE_WRITE_TOKEN` | yes | — | Logfire write token. Needs **`project:write`** + **`project:write_otlp`** scopes. `LOGFIRE_TOKEN` also accepted. |
 | `LOGFIRE_REGION` | no | inferred from token, else `us` | `us` or `eu`. |
 | `LOGFIRE_WRITER_ENDPOINT` | no | region URL | Override OTLP base for self-hosted Logfire. |
 | `PI_LOGFIRE_WRITER_CAPTURE_CONTENT` | no | `full` | `metadata_only` \| `no_tool_content` \| `full`. Defaults to `full` (pydantic-ai parity: records prompts/responses/tool IO so Logfire shows Input/Output/Thoughts). Set `metadata_only` to omit message bodies. `PI_OTEL_CAPTURE_CONTENT` also accepted. |

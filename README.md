@@ -3,10 +3,16 @@
 [pi](https://github.com/earendil-works/pi) coding-agent plugins for
 [Pydantic Logfire](https://pydantic.dev/logfire). Two sibling extensions:
 
-| Plugin | Role | Token | Summary |
-|--------|------|-------|---------|
-| [**pi-logfire-reader**](./pi-logfire-reader) | reader | `project:read` | Bridges the Logfire MCP server into pi as native `logfire_*` tools so the agent can **query** your telemetry (traces, metrics, SQL). |
-| [**pi-logfire-writer**](./pi-logfire-writer) | writer | `project:write` | Ships pi's own activity to Logfire as **pydantic-ai-shaped** OpenTelemetry traces (`agent run` → `chat` → `running tool`). |
+| Plugin | Role | Token scopes | Summary |
+|--------|------|--------------|---------|
+| [**pi-logfire-reader**](./pi-logfire-reader) | reader | `project:read` + `project:read_otlp` | Bridges the Logfire MCP server into pi as native `logfire_*` tools so the agent can **query** your telemetry (traces, metrics, SQL). |
+| [**pi-logfire-writer**](./pi-logfire-writer) | writer | `project:write` + `project:write_otlp` | Ships pi's own activity to Logfire as **pydantic-ai-shaped** OpenTelemetry traces (`agent run` → `chat` → `running tool`). |
+
+> **Scopes matter.** The reader's MCP tools need `project:read`, and querying
+> trace/span data needs `project:read_otlp`. The writer's OTLP ingestion needs
+> `project:write_otlp` (plus `project:write`). A token missing a scope fails with
+> `insufficient_scope`; check any token with the reader's `logfire_token_info`
+> tool. Read and write are usually **separate tokens**.
 
 Run both together and pi can **read its own activity**: the writer records each
 pi session as GenAI spans, and the reader lets pi query those spans back from

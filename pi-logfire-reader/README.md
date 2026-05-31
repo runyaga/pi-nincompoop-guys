@@ -33,7 +33,9 @@ toolset without updating this extension.
 ## Requirements
 
 - `pi` (the `@earendil-works/pi-coding-agent` CLI)
-- A Logfire **read token** with at least the `project:read` scope
+- A Logfire **read token** with the **`project:read`** and **`project:read_otlp`**
+  scopes (`project:read` for the MCP tools; `project:read_otlp` to query your
+  trace/span/metric data)
 - Node.js 18+ (for `fetch` / Streamable HTTP)
 
 ## Install
@@ -53,7 +55,7 @@ never lands in version control.
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `LOGFIRE_READ_TOKEN` | yes | — | Logfire read token (`project:read` scope). `LOGFIRE_TOKEN` also accepted. |
+| `LOGFIRE_READ_TOKEN` | yes | — | Logfire read token. Needs **`project:read`** + **`project:read_otlp`** scopes. `LOGFIRE_TOKEN` also accepted. |
 | `LOGFIRE_MCP_URL` | no | `https://logfire-us.pydantic.dev/mcp` | MCP endpoint. Use the EU URL or a self-hosted URL as needed. |
 
 ```bash
@@ -69,7 +71,8 @@ See [`.env.example`](./.env.example) for a template.
 > authenticates against `https://logfire-us.pydantic.dev/mcp`, and a
 > `pylf_v1_eu_*` token only against the EU URL. Mismatched region returns
 > `invalid_token`; a token missing the required scope returns
-> `insufficient_scope` (you need `project:read`).
+> `insufficient_scope`. Check a token's scopes with the `logfire_token_info`
+> tool — you need both `project:read` and `project:read_otlp`.
 
 ## Commands
 
