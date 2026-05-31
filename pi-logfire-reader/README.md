@@ -33,9 +33,9 @@ toolset without updating this extension.
 ## Requirements
 
 - `pi` (the `@earendil-works/pi-coding-agent` CLI)
-- A Logfire **read token** with the **`project:read`** and **`project:read_otlp`**
-  scopes (`project:read` for the MCP tools; `project:read_otlp` to query your
-  trace/span/metric data)
+- A Logfire **v2 read token** (prefix contains `_v2_`; v1 tokens do not work)
+  with the **`project:read`** and **`project:read_otlp`** scopes (`project:read`
+  for the MCP tools; `project:read_otlp` to query your trace/span/metric data)
 - Node.js 18+ (for `fetch` / Streamable HTTP)
 
 ## Install
@@ -67,9 +67,13 @@ pi
 
 See [`.env.example`](./.env.example) for a template.
 
-> **Token region must match the endpoint.** A `pylf_v1_us_*` token only
+> **Use a v2 token.** The token must be a Logfire **v2** token — its prefix
+> contains `_v2_` (e.g. `pylf_v2_us_...`). Legacy **v1** tokens (`pylf_v1_...`)
+> will **not** authenticate.
+
+> **Token region must match the endpoint.** A `pylf_v2_us_*` token only
 > authenticates against `https://logfire-us.pydantic.dev/mcp`, and a
-> `pylf_v1_eu_*` token only against the EU URL. Mismatched region returns
+> `pylf_v2_eu_*` token only against the EU URL. Mismatched region returns
 > `invalid_token`; a token missing the required scope returns
 > `insufficient_scope`. Check a token's scopes with the `logfire_token_info`
 > tool — you need both `project:read` and `project:read_otlp`.

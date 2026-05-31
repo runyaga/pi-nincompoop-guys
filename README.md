@@ -14,6 +14,10 @@
 > `insufficient_scope`; check any token with the reader's `logfire_token_info`
 > tool. Read and write are usually **separate tokens**.
 
+> **Use v2 tokens.** The token must be a Logfire **v2** token — its prefix
+> contains `_v2_` (e.g. `pylf_v2_us_...`). Legacy **v1** tokens (`pylf_v1_...`)
+> will **not** authenticate against the MCP or OTLP endpoints.
+
 Run both together and pi can **read its own activity**: the writer records each
 pi session as GenAI spans, and the reader lets pi query those spans back from
 Logfire.

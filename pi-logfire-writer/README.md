@@ -32,8 +32,9 @@ the running conversation across turns.
 ## Requirements
 
 - `pi` (`@earendil-works/pi-coding-agent`)
-- A Logfire **write token** with the **`project:write`** and **`project:write_otlp`**
-  scopes (`project:write_otlp` is what authorizes OTLP trace ingestion)
+- A Logfire **v2 write token** (prefix contains `_v2_`; v1 tokens do not work)
+  with the **`project:write`** and **`project:write_otlp`** scopes
+  (`project:write_otlp` is what authorizes OTLP trace ingestion)
 - Node.js ≥ 18
 
 ## Install
@@ -59,8 +60,12 @@ pi -e ./index.ts
 Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
 (traces are exported over OTLP/HTTP protobuf with `Authorization: <token>`).
 
+> **Use a v2 token.** The token must be a Logfire **v2** token — its prefix
+> contains `_v2_` (e.g. `pylf_v2_us_...`). Legacy **v1** tokens (`pylf_v1_...`)
+> will **not** authenticate.
+
 > **Token region must match.** A `pylf_v2_us_*` token only authenticates against
-> the US endpoint; `pylf_v?_eu_*` only against EU.
+> the US endpoint; `pylf_v2_eu_*` only against EU.
 
 > **Content capture defaults to `full`** so Logfire's GenAI Input/Output/Thoughts
 > panels populate like pydantic-ai (prompts, responses, and tool IO are sent to
