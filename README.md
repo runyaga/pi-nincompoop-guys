@@ -1,3 +1,15 @@
+# pi-nincompoop-guys
+
+[pi](https://github.com/earendil-works/pi) coding-agent extensions for
+[Pydantic Logfire](https://pydantic.dev/logfire):
+
+- **pi-logfire-mcp** (this directory) — *reader*: bridges the Logfire MCP server
+  into pi as native tools, so the agent can query your telemetry.
+- [**pi-logfire-writer**](./pi-logfire-writer) — *writer*: ships pi's own
+  OpenTelemetry traces to Logfire (a Logfire preset on top of pi-otel).
+
+---
+
 # pi-logfire-mcp
 
 A [pi](https://github.com/earendil-works/pi) coding-agent extension that bridges

@@ -1,0 +1,15 @@
+{
+  "name": "pi-logfire-writer",
+  "version": "0.1.0",
+  "description": "Pi coding-agent extension that ships pi's OpenTelemetry traces to Pydantic Logfire (a Logfire-targeted preset built on pi-otel).",
+  "type": "module",
+  "private": true,
+  "pi": { "extensions": ["./index.ts"] },
+  "scripts": { "test": "node --test" },
+  "dependencies": {
+    "pi-otel": "^0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
