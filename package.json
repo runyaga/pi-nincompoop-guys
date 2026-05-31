@@ -1,0 +1,43 @@
+{
+  "name": "pi-logfire-mcp",
+  "version": "0.1.0",
+  "description": "Pi coding agent extension that bridges the Pydantic Logfire OpenTelemetry MCP server into pi as native tools",
+  "author": "runyaga",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/runyaga/pi-nincompoop-guys.git"
+  },
+  "homepage": "https://github.com/runyaga/pi-nincompoop-guys#readme",
+  "bugs": {
+    "url": "https://github.com/runyaga/pi-nincompoop-guys/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "logfire",
+    "pydantic",
+    "mcp",
+    "opentelemetry",
+    "otel",
+    "observability",
+    "coding-agent"
+  ],
+  "files": [
+    "index.ts",
+    "logfire-mcp.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
