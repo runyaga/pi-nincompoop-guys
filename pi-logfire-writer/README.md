@@ -100,11 +100,23 @@ Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
 | `agent_end` | close `agent run` with final result + aggregate usage |
 | `session_shutdown` | flush + shut down the exporter |
 
+## Exceptions / tracebacks
+
+When a tool fails (`tool_execution_end` with `isError`), or an LLM request
+errors, the writer records it the OTel way — an **`exception` span event**
+(`exception.type` / `exception.message` / `exception.stacktrace`) plus span
+**status = ERROR**. Logfire surfaces this as `is_exception=true`, `level=17`
+(error), and a traceback panel — exactly like pydantic-ai. The exception lands
+on the originating span (`running tool` or `chat <model>`); pi recovers from
+tool errors, so the parent `agent run` is not marked failed. pi typically gives
+a single-line error message (so the stacktrace mirrors it); richer stacks pass
+through when pi provides them.
+
 ## Development & tests
 
 ```bash
 npm install
-npm test        # node --test — 21 tests
+npm test        # node --test
 ```
 
 - `genai-attrs.ts` — pure GenAI attribute constants + message extraction helpers
