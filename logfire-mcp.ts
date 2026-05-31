@@ -11,7 +11,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
  * and registers each one as a native pi tool that proxies calls back over MCP.
  */
 
-const DEFAULT_URL = "https://logfire-eu.pydantic.dev/mcp";
+const DEFAULT_URL = "https://logfire-us.pydantic.dev/mcp";
 const TOOL_PREFIX = "logfire_";
 const CLIENT_INFO = { name: "pi-logfire-mcp", version: "0.1.0" };
 

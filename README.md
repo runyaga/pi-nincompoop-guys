@@ -18,10 +18,10 @@ OpenTelemetry records — all from inside pi.
 pi (agent)
   └─ pi-logfire-mcp extension
        └─ MCP client (Streamable HTTP, Bearer auth)
-            └─ https://logfire-eu.pydantic.dev/mcp   (Logfire remote MCP server)
-                 ├─ tool: arbitrary_query
-                 ├─ tool: find_exceptions
-                 ├─ tool: get_logfire_records_schema
+            └─ https://logfire-us.pydantic.dev/mcp   (Logfire remote MCP server)
+                 ├─ tool: query_run
+                 ├─ tool: query_schema_reference
+                 ├─ tool: query_find_exceptions_in_file
                  └─ ... (whatever the server advertises)
 ```
 
@@ -61,12 +61,12 @@ never lands in version control.
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `LOGFIRE_READ_TOKEN` | yes | — | Logfire read token (`project:read` scope). `LOGFIRE_TOKEN` also accepted. |
-| `LOGFIRE_MCP_URL` | no | `https://logfire-eu.pydantic.dev/mcp` | MCP endpoint. Use the US URL or a self-hosted URL as needed. |
+| `LOGFIRE_MCP_URL` | no | `https://logfire-us.pydantic.dev/mcp` | MCP endpoint. Use the EU URL or a self-hosted URL as needed. |
 
 ```bash
-export LOGFIRE_READ_TOKEN="pylf_v1_..."
-# EU is the default; switch regions if your token is US-region:
-# export LOGFIRE_MCP_URL="https://logfire-us.pydantic.dev/mcp"
+export LOGFIRE_READ_TOKEN="pylf_v2_us_..."
+# US is the default; switch regions if your token is EU-region:
+# export LOGFIRE_MCP_URL="https://logfire-eu.pydantic.dev/mcp"
 pi
 ```
 
@@ -85,17 +85,26 @@ See [`.env.example`](./.env.example) for a template.
 | `/logfire-status` | Show connection status and discovered tool count |
 | `/logfire-reconnect` | Reconnect and refresh the Logfire toolset (e.g. after exporting a token) |
 
-## Example tools
+## Tools
 
 The exact set is whatever the live server advertises (the remote server iterates
-on its toolset). Commonly available Logfire MCP tools include:
+on its toolset) and is discovered automatically at connect time. As verified
+against the live US endpoint, the current toolset is:
 
-- `arbitrary_query` — run a SQL query against your Logfire OpenTelemetry records
-- `get_logfire_records_schema` — fetch the schema of the records table to build queries
-- `find_exceptions` — find exceptions across services over a time window
-- `find_exceptions_in_file` — find exceptions originating in a specific file
+| pi tool | Description |
+|---------|-------------|
+| `logfire_query_run` | Run an arbitrary SQL `SELECT` against the Logfire (DataFusion) database |
+| `logfire_query_schema_reference` | Get the database schema and query handbook |
+| `logfire_query_find_exceptions_in_file` | Details on the 10 most recent exceptions matching a source file path |
+| `logfire_project_list` | List all readable projects for the authenticated user |
+| `logfire_project_logfire_link` | Generate a Logfire UI link to view a specific trace |
+| `logfire_project_logfire_ui_link` | Generate a Logfire project UI link for live-view/filter pages |
+| `logfire_token_info` | Info about the current authentication token |
+| `logfire_variable_list` | List managed variables (feature flags) in a project |
+| `logfire_variable_get` | Get a managed variable (feature flag) by name |
+| `logfire_variable_list_versions` | List all versions of a managed variable |
 
-These appear in pi as `logfire_arbitrary_query`, `logfire_find_exceptions`, etc.
+Every Logfire MCP tool is exposed under the `logfire_<name>` prefix.
 
 ## Development
 
