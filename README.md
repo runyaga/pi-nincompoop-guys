@@ -71,8 +71,13 @@ the tokens and run pi:
 ```bash
 export LOGFIRE_READ_TOKEN="pylf_v2_us_..._read"     # reader: project:read + project:read_otlp
 export LOGFIRE_WRITE_TOKEN="pylf_v2_us_..._write"   # writer: project:write + project:write_otlp
+export PI_LOGFIRE_WRITER_ENABLED=1                  # writer telemetry is OFF by default — opt in
 pi
 ```
+
+> **Writer telemetry is opt-in.** With a write token but no
+> `PI_LOGFIRE_WRITER_ENABLED=1`, the writer stays **paused** and sends nothing
+> until you `/logfire-resume`. The reader is always available.
 
 Manage it like any pi package:
 
@@ -110,16 +115,18 @@ You don't always want the writer recording. Toggle it at runtime — no restart:
 | `/logfire-toggle` | Flip between paused / tracing |
 | `/logfire-writer-status` | Shows `— PAUSED` or `— tracing` |
 
-Start a session already paused (configured + connected, but emitting nothing
-until you `/logfire-resume`):
+**Telemetry is OFF by default.** The writer starts **paused** unless you opt in
+with `PI_LOGFIRE_WRITER_ENABLED=1` (set it alongside your token). Turn it on for
+a session that started paused with `/logfire-resume`:
 
 ```bash
-PI_LOGFIRE_WRITER_START_PAUSED=1 pi        # accepts True/1/yes/on; default off
+PI_LOGFIRE_WRITER_ENABLED=1 pi             # accepts True/1/yes/on; default off
 ```
 
 While paused the writer creates **zero** spans. The reader is unaffected — you
-can still query Logfire. See [pi-logfire-writer](./pi-logfire-writer#commands)
-for details.
+can still query Logfire. (For an explicit override regardless of the enable
+flag, `PI_LOGFIRE_WRITER_START_PAUSED=true|false`.) See
+[pi-logfire-writer](./pi-logfire-writer#commands) for details.
 
 ## License
 

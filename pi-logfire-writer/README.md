@@ -43,6 +43,7 @@ the running conversation across turns.
 git clone <repo> && cd pi-logfire-writer
 npm install
 export LOGFIRE_WRITE_TOKEN="pylf_v2_us_..."
+export PI_LOGFIRE_WRITER_ENABLED=1     # telemetry is OFF by default — opt in
 pi -e ./index.ts
 ```
 
@@ -54,7 +55,8 @@ pi -e ./index.ts
 | `LOGFIRE_REGION` | no | inferred from token, else `us` | `us` or `eu`. |
 | `LOGFIRE_WRITER_ENDPOINT` | no | region URL | Override OTLP base for self-hosted Logfire. |
 | `PI_LOGFIRE_WRITER_CAPTURE_CONTENT` | no | `full` | `metadata_only` \| `no_tool_content` \| `full`. Defaults to `full` (pydantic-ai parity: records prompts/responses/tool IO so Logfire shows Input/Output/Thoughts). Set `metadata_only` to omit message bodies. `PI_OTEL_CAPTURE_CONTENT` also accepted. |
-| `PI_LOGFIRE_WRITER_START_PAUSED` | no | `false` | `True`/`1` starts configured-but-**paused** (no spans until `/logfire-resume`). |
+| `PI_LOGFIRE_WRITER_ENABLED` | no | `false` | **Telemetry is OFF by default.** Set `True`/`1` (alongside your token) to start tracing. Otherwise the writer is configured but paused — emits nothing until `/logfire-resume`. |
+| `PI_LOGFIRE_WRITER_START_PAUSED` | no | — | Explicit override of the start state (`true` = force paused, `false` = force tracing). Wins over `PI_LOGFIRE_WRITER_ENABLED`. |
 | `PI_LOGFIRE_WRITER_DISABLED` | no | — | `1` to hard-disable export (no commands, no wiring). |
 
 Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
@@ -83,8 +85,9 @@ Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
 | `/logfire-resume` | Resume tracing |
 | `/logfire-toggle` | Toggle tracing on/off |
 
-You don't always need tracing — pause it for a few prompts, then resume. Start a
-session already paused with `PI_LOGFIRE_WRITER_START_PAUSED=1`.
+**Telemetry is off by default** (opt-in). Turn it on for a session by setting
+`PI_LOGFIRE_WRITER_ENABLED=1` next to your token, or at runtime with
+`/logfire-resume`. Pause it again anytime with `/logfire-pause`.
 
 ## How it maps pi → GenAI spans
 

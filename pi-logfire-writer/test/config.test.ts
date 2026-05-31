@@ -83,22 +83,45 @@ test("LOGFIRE_TOKEN is accepted as a fallback for the write token", () => {
 	assert.equal(cfg.token, US_TOKEN);
 });
 
-test("PI_LOGFIRE_WRITER_START_PAUSED controls startPaused (default off)", () => {
-	assert.equal(resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN }).startPaused, false);
+test("telemetry is OFF by default; PI_LOGFIRE_WRITER_ENABLED opts in", () => {
+	// Default: configured but paused (telemetry off).
+	assert.equal(resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN }).startPaused, true);
+	// Opt in to tracing.
 	for (const v of ["True", "true", "1", "yes", "on"]) {
 		assert.equal(
-			resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN, PI_LOGFIRE_WRITER_START_PAUSED: v }).startPaused,
-			true,
-			`PI_LOGFIRE_WRITER_START_PAUSED=${v} should pause`,
+			resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN, PI_LOGFIRE_WRITER_ENABLED: v }).startPaused,
+			false,
+			`PI_LOGFIRE_WRITER_ENABLED=${v} should start tracing`,
 		);
 	}
+	// Explicitly false/unset stays off.
 	for (const v of ["False", "false", "0", ""]) {
 		assert.equal(
-			resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN, PI_LOGFIRE_WRITER_START_PAUSED: v }).startPaused,
-			false,
-			`PI_LOGFIRE_WRITER_START_PAUSED=${v} should not pause`,
+			resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN, PI_LOGFIRE_WRITER_ENABLED: v }).startPaused,
+			true,
+			`PI_LOGFIRE_WRITER_ENABLED=${v} should stay paused`,
 		);
 	}
+});
+
+test("PI_LOGFIRE_WRITER_START_PAUSED is an explicit override over the enable flag", () => {
+	// Even with ENABLED=true, START_PAUSED=true forces paused.
+	assert.equal(
+		resolveLogfireWriterConfig({
+			LOGFIRE_WRITE_TOKEN: US_TOKEN,
+			PI_LOGFIRE_WRITER_ENABLED: "true",
+			PI_LOGFIRE_WRITER_START_PAUSED: "true",
+		}).startPaused,
+		true,
+	);
+	// START_PAUSED=false forces tracing even without the enable flag.
+	assert.equal(
+		resolveLogfireWriterConfig({
+			LOGFIRE_WRITE_TOKEN: US_TOKEN,
+			PI_LOGFIRE_WRITER_START_PAUSED: "false",
+		}).startPaused,
+		false,
+	);
 });
 
 test("missing token disables export with a reason", () => {
@@ -148,7 +171,7 @@ test("maskToken hides the secret tail but keeps the prefix", () => {
 
 test("describeConfig summarizes enabled and disabled states", () => {
 	const enabled = resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN });
-	assert.match(describeConfig(enabled), /exporting traces to https:\/\/logfire-us/);
+	assert.match(describeConfig(enabled), /configured -> https:\/\/logfire-us/);
 	const disabled = resolveLogfireWriterConfig({});
 	assert.match(describeConfig(disabled), /disabled/);
 });

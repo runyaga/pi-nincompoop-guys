@@ -124,9 +124,23 @@ export function resolveLogfireWriterConfig(
 		protocol: "http/protobuf",
 		serviceName,
 		captureContent,
-		// PI_LOGFIRE_WRITER_START_PAUSED=True|1 -> start configured-but-paused (default off).
-		startPaused: envFlagTrue(env.PI_LOGFIRE_WRITER_START_PAUSED),
+		// Telemetry is OFF by default (opt-in). Set PI_LOGFIRE_WRITER_ENABLED=true
+		// (alongside your token) to start tracing; otherwise the writer starts
+		// paused and emits nothing until /logfire-resume.
+		startPaused: resolveStartPaused(env),
 	};
+}
+
+/**
+ * Decide whether the writer starts paused. Default is PAUSED (telemetry off) —
+ * opt in with PI_LOGFIRE_WRITER_ENABLED=true. PI_LOGFIRE_WRITER_START_PAUSED, if
+ * set, is an explicit override (wins over the enable flag).
+ */
+function resolveStartPaused(env: NodeJS.ProcessEnv): boolean {
+	if (env.PI_LOGFIRE_WRITER_START_PAUSED !== undefined) {
+		return envFlagTrue(env.PI_LOGFIRE_WRITER_START_PAUSED);
+	}
+	return !envFlagTrue(env.PI_LOGFIRE_WRITER_ENABLED);
 }
 
 function normalizeCapture(v: string | undefined): "metadata_only" | "no_tool_content" | "full" {
@@ -151,5 +165,5 @@ export function describeConfig(config: LogfireWriterConfig): string {
 	if (!config.enabled) {
 		return `disabled — ${config.disabledReason}`;
 	}
-	return `exporting traces to ${config.tracesUrl} (region=${config.region}, token=${maskToken(config.token)})`;
+	return `configured -> ${config.tracesUrl} (region=${config.region}, token=${maskToken(config.token)})`;
 }

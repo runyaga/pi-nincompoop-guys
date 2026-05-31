@@ -107,8 +107,10 @@ export default function (pi: ExtensionAPI): void {
 		});
 		tracker.setPaused(paused);
 		ctx.ui.notify(
-			`pi-logfire-writer: traces -> ${config.tracesUrl}${paused ? " (PAUSED — /logfire-resume to start)" : ""}`,
-			"info",
+			paused
+				? `pi-logfire-writer: telemetry OFF (default). Run /logfire-resume or set PI_LOGFIRE_WRITER_ENABLED=1 to send traces to ${config.tracesUrl}`
+				: `pi-logfire-writer: telemetry ON — traces -> ${config.tracesUrl}`,
+			paused ? "warning" : "info",
 		);
 	});
 
