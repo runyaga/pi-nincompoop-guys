@@ -95,6 +95,28 @@ pi install ./pi-nincompoop-guys/pi-logfire-writer      # writer only
 pi -e ./pi-logfire-reader/index.ts -e ./pi-logfire-writer/index.ts
 ```
 
+## Pause / resume tracing
+
+You don't always want the writer recording. Toggle it at runtime — no restart:
+
+| Command | Effect |
+|---------|--------|
+| `/logfire-pause` | Stop emitting spans (an in-flight run still finishes cleanly) |
+| `/logfire-resume` | Start emitting again |
+| `/logfire-toggle` | Flip between paused / tracing |
+| `/logfire-writer-status` | Shows `— PAUSED` or `— tracing` |
+
+Start a session already paused (configured + connected, but emitting nothing
+until you `/logfire-resume`):
+
+```bash
+PI_LOGFIRE_WRITER_START_PAUSED=1 pi        # accepts True/1/yes/on; default off
+```
+
+While paused the writer creates **zero** spans. The reader is unaffected — you
+can still query Logfire. See [pi-logfire-writer](./pi-logfire-writer#commands)
+for details.
+
 ## License
 
 MIT.
