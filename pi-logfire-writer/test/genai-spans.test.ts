@@ -7,12 +7,14 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import {
 	buildAssistantParts,
+	clampMessages,
 	extractMessageText,
 	extractToolResultText,
 	normalizeFinishReason,
 	spanChatName,
 } from "../genai-attrs.ts";
 import { GenAiSpanTracker } from "../genai-spans.ts";
+import { checkShape } from "../shape-spec.ts";
 
 test("spanChatName matches pydantic-ai 'chat <model>'", () => {
 	assert.equal(spanChatName("gpt-4o"), "chat gpt-4o");
@@ -60,9 +62,26 @@ test("extractToolResultText renders structured pi tool results to plain text", (
 	assert.equal(extractToolResultText({ foo: 1 }), '{"foo":1}');
 });
 
-test("normalizeFinishReason reads pi finish/stop fields", () => {
+test("clampMessages stays valid JSON even when a huge field is truncated", () => {
+	// pi's system prompt can exceed 60 KB; byte-truncating the whole JSON would
+	// corrupt it and Logfire would render a raw string instead of panels.
+	const huge = "x".repeat(200_000);
+	const messages = [
+		{ role: "system", parts: [{ type: "text", content: huge }] },
+		{ role: "user", parts: [{ type: "text", content: "hi" }] },
+	];
+	const out = clampMessages(messages);
+	const parsed = JSON.parse(out); // must not throw
+	assert.ok(Array.isArray(parsed));
+	assert.ok(out.length < 70_000);
+	assert.ok((parsed.at(-1).parts[0].content as string).length <= 20); // recent kept intact
+});
+
+test("normalizeFinishReason maps pi reasons to snake_case GenAI vocabulary", () => {
+	assert.equal(normalizeFinishReason({ finishReason: "toolUse" }), "tool_call");
 	assert.equal(normalizeFinishReason({ finishReason: "tool_call" }), "tool_call");
-	assert.equal(normalizeFinishReason({ stopReason: "end_turn" }), "end_turn");
+	assert.equal(normalizeFinishReason({ stopReason: "end_turn" }), "stop");
+	assert.equal(normalizeFinishReason({ finishReason: "max_tokens" }), "length");
 	assert.equal(normalizeFinishReason({}), "stop");
 });
 
@@ -144,6 +163,11 @@ test("tracker emits pydantic-ai-shaped span tree (agent run / chat / running too
 	assert.equal(outMsgs[0].parts[0].type, "tool_call");
 	assert.equal(outMsgs[0].finish_reason, "tool_call");
 
+	// Logfire needs json_schema to render message panels (not raw strings).
+	const schema = JSON.parse(chat1.attributes["logfire.json_schema"] as string);
+	assert.equal(schema.properties["gen_ai.input.messages"].type, "array");
+	assert.equal(schema.properties["gen_ai.output.messages"].type, "array");
+
 	const tool = byName("running tool")[0];
 	assert.equal(tool.attributes["gen_ai.operation.name"], "execute_tool");
 	assert.equal(tool.attributes["gen_ai.tool.name"], "get_weather");
@@ -162,6 +186,42 @@ test("tracker emits pydantic-ai-shaped span tree (agent run / chat / running too
 	const chat2 = byName("chat Qwen/Qwen3.5-122B-A10B-FP8")[1];
 	const in2 = JSON.parse(chat2.attributes["gen_ai.input.messages"] as string);
 	assert.ok(in2.some((m: { role: string }) => m.role === "tool"));
+});
+
+test("every emitted span conforms to the shared pydantic-ai shape spec", () => {
+	const { exporter, tracker } = setup();
+	tracker.startAgentRun("What is the weather in Paris?", "You are a concise assistant.");
+	tracker.noteUserMessage("What is the weather in Paris?");
+	tracker.startChat("m");
+	tracker.endChatWithAssistant({
+		role: "assistant",
+		model: "m",
+		finishReason: "tool_call",
+		usage: { inputTokens: 10, outputTokens: 5 },
+		content: [{ type: "toolCall", id: "tc1", name: "get_weather", arguments: { city: "Paris" } }],
+	});
+	tracker.startTool("tc1", "get_weather", { city: "Paris" });
+	tracker.endTool("tc1", { isError: false, result: { content: [{ type: "text", text: "21C sunny" }] } });
+	tracker.noteToolResultMessage({ toolCallId: "tc1", toolName: "get_weather", content: "21C sunny" });
+	tracker.startChat("m");
+	tracker.endChatWithAssistant({
+		role: "assistant",
+		model: "m",
+		finishReason: "stop",
+		usage: { inputTokens: 12, outputTokens: 3 },
+		content: [{ type: "text", text: "It is 21C and sunny in Paris." }],
+	});
+	tracker.endAgentRun();
+
+	const spans = exporter.getFinishedSpans();
+	assert.ok(spans.length >= 4);
+	for (const s of spans) {
+		const r = checkShape(s.name, s.attributes as Record<string, unknown>);
+		assert.ok(
+			r.ok,
+			`span "${s.name}" (${r.operation}) failed shape: missing=${r.missing.join(",")} forbidden=${r.forbiddenPresent.join(",")} nameOk=${r.spanNameOk}`,
+		);
+	}
 });
 
 test("metadata_only capture omits message bodies but keeps structure", () => {

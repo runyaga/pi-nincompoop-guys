@@ -21,7 +21,7 @@
  *   PI_LOGFIRE_WRITER_DISABLED=1      Hard-disable export.
  */
 
-import { basename } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { GenAiSpanTracker } from "./genai-spans.ts";
 import { ATTR_RESPONSE_ID } from "./genai-attrs.ts";
@@ -56,15 +56,11 @@ export default function (pi: ExtensionAPI): void {
 	}
 
 	let tracker: GenAiSpanTracker | null = null;
-	let sessionId: string | undefined;
+	// pydantic-ai uses a clean UUID conversation id (not the session filename).
+	let conversationId: string | undefined;
 
 	pi.on("session_start", async (_event, ctx: ExtensionContext) => {
-		try {
-			const file = ctx.sessionManager?.getSessionFile?.();
-			if (file) sessionId = basename(file, ".jsonl");
-		} catch {
-			// ephemeral session
-		}
+		conversationId = randomUUID();
 		const tracer = initSdk({
 			tracesUrl: config.tracesUrl,
 			token: config.token as string,
@@ -73,10 +69,10 @@ export default function (pi: ExtensionAPI): void {
 		tracker = new GenAiSpanTracker({
 			tracer,
 			captureContent: config.captureContent,
-			agentName: config.serviceName,
+			agentName: "pi",
 			system: "pi",
 			provider: "pi",
-			conversationId: () => sessionId,
+			conversationId: () => conversationId,
 		});
 		ctx.ui.notify(`pi-logfire-writer: traces -> ${config.tracesUrl}`, "info");
 	});

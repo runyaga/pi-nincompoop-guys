@@ -98,17 +98,18 @@ test("PI_LOGFIRE_WRITER_DISABLED hard-disables even with a token", () => {
 	assert.match(cfg.disabledReason ?? "", /DISABLED/);
 });
 
-test("captureContent defaults to metadata_only and honors overrides", () => {
+test("captureContent defaults to full (pydantic-ai parity) and honors overrides", () => {
+	// Default is full so Logfire shows input/output/thoughts like pydantic-ai.
 	assert.equal(
 		resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN }).captureContent,
-		"metadata_only",
+		"full",
 	);
 	assert.equal(
 		resolveLogfireWriterConfig({
 			LOGFIRE_WRITE_TOKEN: US_TOKEN,
-			PI_LOGFIRE_WRITER_CAPTURE_CONTENT: "full",
+			PI_LOGFIRE_WRITER_CAPTURE_CONTENT: "metadata_only",
 		}).captureContent,
-		"full",
+		"metadata_only",
 	);
 	// pi-otel's env var is accepted for compatibility
 	assert.equal(

@@ -15,6 +15,7 @@ export const ATTR_OPERATION_NAME = "gen_ai.operation.name";
 export const ATTR_SYSTEM = "gen_ai.system";
 export const ATTR_PROVIDER_NAME = "gen_ai.provider.name";
 export const ATTR_AGENT_NAME = "gen_ai.agent.name";
+export const ATTR_AGENT_CALL_ID = "gen_ai.agent.call.id";
 export const ATTR_CONVERSATION_ID = "gen_ai.conversation.id";
 export const ATTR_ERROR_TYPE = "error.type";
 
@@ -38,10 +39,28 @@ export const ATTR_TOOL_RESPONSE = "tool_response";
 export const ATTR_INPUT_MESSAGES = "gen_ai.input.messages";
 export const ATTR_OUTPUT_MESSAGES = "gen_ai.output.messages";
 
+/**
+ * Logfire reads this attribute to learn which (JSON-string) attributes are
+ * structured, so its UI parses + renders them as rich panels rather than raw
+ * strings. Verified necessary: without it, gen_ai.input.messages stays an
+ * opaque string in the Logfire UI.
+ */
+export const ATTR_LOGFIRE_JSON_SCHEMA = "logfire.json_schema";
+
+/** Build a logfire.json_schema value declaring the given attrs as JSON. */
+export function buildLogfireJsonSchema(
+	props: Record<string, "array" | "object">,
+): string {
+	const properties: Record<string, { type: string }> = {};
+	for (const [k, t] of Object.entries(props)) properties[k] = { type: t };
+	return JSON.stringify({ type: "object", properties });
+}
+
 // pydantic-ai convenience attributes on the agent-run span
 export const ATTR_PAI_AGENT_NAME = "agent_name";
 export const ATTR_PAI_MODEL_NAME = "model_name";
 export const ATTR_PAI_FINAL_RESULT = "final_result";
+export const ATTR_PAI_ALL_MESSAGES = "pydantic_ai.all_messages";
 
 // Operation values
 export const OP_INVOKE_AGENT = "invoke_agent";
@@ -79,6 +98,43 @@ export function clampAttr(value: unknown): string {
 interface Part {
 	type: string;
 	[k: string]: unknown;
+}
+
+const PER_FIELD_MAX = 8000;
+const TOTAL_MAX = 58000;
+
+function truncStr(s: string, max: number): string {
+	return s.length <= max ? s : `${s.slice(0, max)}…[truncated]`;
+}
+
+/**
+ * Serialize a GenAI messages array to JSON that stays VALID even when large.
+ * Byte-truncating the final JSON string (as clampAttr does) yields invalid JSON
+ * that Logfire stores as an opaque string instead of rendering — pi's system
+ * prompt alone can exceed 60 KB. So we truncate the long *leaf* string fields
+ * inside each message/part, then drop oldest messages if still over budget.
+ */
+export function clampMessages(messages: Array<Record<string, unknown>>): string {
+	const leafKeys = ["content", "text", "arguments", "result", "response"];
+	const safe = messages.map((m) => {
+		const parts = Array.isArray(m.parts)
+			? (m.parts as Part[]).map((p) => {
+					const q: Record<string, unknown> = { ...p };
+					for (const k of leafKeys) {
+						if (typeof q[k] === "string") q[k] = truncStr(q[k] as string, PER_FIELD_MAX);
+					}
+					return q;
+				})
+			: m.parts;
+		return { ...m, parts };
+	});
+	let out = JSON.stringify(safe);
+	// Still too big: drop oldest non-system messages, keeping recent context.
+	while (out.length > TOTAL_MAX && safe.length > 1) {
+		safe.splice(safe[0]?.role === "system" ? 1 : 0, 1);
+		out = JSON.stringify(safe);
+	}
+	return out;
 }
 
 /** Concatenate the text parts of a pi message `content` (string | parts[]). */
@@ -160,8 +216,28 @@ export function applyUsageAttrs(
 	set(ATTR_OUTPUT_TOKENS, u.output ?? u.outputTokens ?? u.output_tokens);
 }
 
-/** Normalize a pi finish/stop reason to a string. */
+// pi uses provider-ish finish reasons (e.g. "toolUse", "end_turn"); map them to
+// the snake_case GenAI/pydantic-ai vocabulary ("tool_call", "stop", …).
+const FINISH_REASON_MAP: Record<string, string> = {
+	tooluse: "tool_call",
+	tool_use: "tool_call",
+	toolcalls: "tool_call",
+	tool_calls: "tool_call",
+	tool_call: "tool_call",
+	endturn: "stop",
+	end_turn: "stop",
+	stop: "stop",
+	stop_sequence: "stop",
+	maxtokens: "length",
+	max_tokens: "length",
+	length: "length",
+	error: "error",
+	content_filter: "content_filter",
+};
+
+/** Normalize a pi finish/stop reason to the snake_case GenAI vocabulary. */
 export function normalizeFinishReason(message: Record<string, unknown>): string {
 	const f = message.finishReason ?? message.stopReason ?? message.finish_reason;
-	return typeof f === "string" ? f : "stop";
+	if (typeof f !== "string") return "stop";
+	return FINISH_REASON_MAP[f.toLowerCase()] ?? f.toLowerCase();
 }

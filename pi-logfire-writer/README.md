@@ -51,7 +51,7 @@ pi -e ./index.ts
 | `LOGFIRE_WRITE_TOKEN` | yes | — | Logfire write token. `LOGFIRE_TOKEN` also accepted. |
 | `LOGFIRE_REGION` | no | inferred from token, else `us` | `us` or `eu`. |
 | `LOGFIRE_WRITER_ENDPOINT` | no | region URL | Override OTLP base for self-hosted Logfire. |
-| `PI_LOGFIRE_WRITER_CAPTURE_CONTENT` | no | `metadata_only` | `metadata_only` \| `no_tool_content` \| `full`. `full` records prompts/responses/tool IO (pydantic-ai parity). `PI_OTEL_CAPTURE_CONTENT` also accepted. |
+| `PI_LOGFIRE_WRITER_CAPTURE_CONTENT` | no | `full` | `metadata_only` \| `no_tool_content` \| `full`. Defaults to `full` (pydantic-ai parity: records prompts/responses/tool IO so Logfire shows Input/Output/Thoughts). Set `metadata_only` to omit message bodies. `PI_OTEL_CAPTURE_CONTENT` also accepted. |
 | `PI_LOGFIRE_WRITER_DISABLED` | no | — | `1` to hard-disable export. |
 
 Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
@@ -60,10 +60,12 @@ Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
 > **Token region must match.** A `pylf_v2_us_*` token only authenticates against
 > the US endpoint; `pylf_v?_eu_*` only against EU.
 
-> **Content capture defaults to `metadata_only`** — span structure, models,
-> token usage, finish reasons, and tool names are recorded, but no message
-> bodies. Set `PI_LOGFIRE_WRITER_CAPTURE_CONTENT=full` to populate the
-> `gen_ai.*.messages` panels like pydantic-ai does.
+> **Content capture defaults to `full`** so Logfire's GenAI Input/Output/Thoughts
+> panels populate like pydantic-ai (prompts, responses, and tool IO are sent to
+> Logfire). Set `PI_LOGFIRE_WRITER_CAPTURE_CONTENT=metadata_only` to record only
+> structure, models, token usage, finish reasons, and tool names — no message
+> bodies. Message attributes carry `logfire.json_schema` so Logfire renders them
+> as structured panels rather than raw strings.
 
 ## Command
 

@@ -12,6 +12,7 @@
  * recorded as gen_ai.input.messages / gen_ai.output.messages on chat spans.
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	type Context,
 	context as otelContext,
@@ -22,14 +23,18 @@ import {
 } from "@opentelemetry/api";
 import {
 	applyUsageAttrs,
+	ATTR_AGENT_CALL_ID,
 	ATTR_AGENT_NAME,
 	ATTR_CONVERSATION_ID,
+	ATTR_LOGFIRE_JSON_SCHEMA,
+	buildLogfireJsonSchema,
 	ATTR_ERROR_TYPE,
 	ATTR_FINISH_REASONS,
 	ATTR_INPUT_MESSAGES,
 	ATTR_OPERATION_NAME,
 	ATTR_OUTPUT_MESSAGES,
 	ATTR_PAI_AGENT_NAME,
+	ATTR_PAI_ALL_MESSAGES,
 	ATTR_PAI_FINAL_RESULT,
 	ATTR_PAI_MODEL_NAME,
 	ATTR_PROVIDER_NAME,
@@ -43,6 +48,7 @@ import {
 	ATTR_TOOL_RESPONSE,
 	buildAssistantParts,
 	clampAttr,
+	clampMessages,
 	type ContentCapture,
 	extractMessageText,
 	extractToolResultText,
@@ -82,6 +88,8 @@ export class GenAiSpanTracker {
 	private aggInput = 0;
 	private aggOutput = 0;
 	private lastModel: string | undefined;
+	/** Stable per-agent-run id linking agent run -> chat -> tool spans. */
+	private callId = "";
 
 	constructor(opts: GenAiTrackerOpts) {
 		this.opts = opts;
@@ -95,12 +103,14 @@ export class GenAiSpanTracker {
 		return this.opts.captureContent === "full";
 	}
 
+	// Attributes pydantic-ai puts on *every* span in an agent run. Note
+	// gen_ai.system / gen_ai.provider.name are NOT here — pydantic-ai sets those
+	// only on `chat` spans.
 	private commonAttrs(): Record<string, string> {
 		const attrs: Record<string, string> = {
-			[ATTR_SYSTEM]: this.opts.system,
-			[ATTR_PROVIDER_NAME]: this.opts.provider,
 			[ATTR_AGENT_NAME]: this.opts.agentName,
 		};
+		if (this.callId) attrs[ATTR_AGENT_CALL_ID] = this.callId;
 		const cid = this.opts.conversationId();
 		if (cid) attrs[ATTR_CONVERSATION_ID] = cid;
 		return attrs;
@@ -115,6 +125,7 @@ export class GenAiSpanTracker {
 		this.aggInput = 0;
 		this.aggOutput = 0;
 		this.lastModel = undefined;
+		this.callId = randomUUID();
 
 		if (this.captureMessages && systemPrompt) {
 			this.conversation.push({
@@ -144,6 +155,13 @@ export class GenAiSpanTracker {
 		if (this.aggOutput) span.setAttribute("gen_ai.usage.output_tokens", this.aggOutput);
 		if (this.captureMessages && this.lastAssistantText) {
 			span.setAttribute(ATTR_PAI_FINAL_RESULT, clampAttr(this.lastAssistantText));
+		}
+		if (this.captureMessages && this.conversation.length > 0) {
+			span.setAttribute(ATTR_PAI_ALL_MESSAGES, clampMessages(this.conversation));
+			span.setAttribute(
+				ATTR_LOGFIRE_JSON_SCHEMA,
+				buildLogfireJsonSchema({ [ATTR_PAI_ALL_MESSAGES]: "array" }),
+			);
 		}
 		if (error) this.markError(span, error);
 		// Close stragglers.
@@ -190,10 +208,21 @@ export class GenAiSpanTracker {
 		if (model) this.lastModel = model;
 		const attrs = this.commonAttrs();
 		attrs[ATTR_OPERATION_NAME] = OP_CHAT;
+		// system / provider.name live only on chat spans (pydantic-ai parity).
+		attrs[ATTR_SYSTEM] = this.opts.system;
+		attrs[ATTR_PROVIDER_NAME] = this.opts.provider;
 		if (model) attrs[ATTR_REQUEST_MODEL] = model;
 		// Snapshot the conversation as this request's input messages.
 		if (this.captureMessages && this.conversation.length > 0) {
-			attrs[ATTR_INPUT_MESSAGES] = clampAttr(this.conversation);
+			attrs[ATTR_INPUT_MESSAGES] = clampMessages(this.conversation);
+		}
+		// Tell Logfire these JSON-string attrs are structured so its UI renders
+		// the Input/Output/Thoughts panels (verified required).
+		if (this.captureMessages) {
+			attrs[ATTR_LOGFIRE_JSON_SCHEMA] = buildLogfireJsonSchema({
+				[ATTR_INPUT_MESSAGES]: "array",
+				[ATTR_OUTPUT_MESSAGES]: "array",
+			});
 		}
 		const span = this.opts.tracer.startSpan(
 			spanChatName(model),
@@ -243,7 +272,7 @@ export class GenAiSpanTracker {
 		if (this.captureMessages) {
 			const parts = buildAssistantParts(message.content, this.captureToolContent);
 			const outputMessage = { role: "assistant", parts, finish_reason: finish };
-			span.setAttribute(ATTR_OUTPUT_MESSAGES, clampAttr([outputMessage]));
+			span.setAttribute(ATTR_OUTPUT_MESSAGES, clampMessages([outputMessage]));
 			// Append to running conversation for subsequent chat spans.
 			this.conversation.push({ role: "assistant", parts });
 		}
@@ -268,8 +297,14 @@ export class GenAiSpanTracker {
 		attrs[ATTR_TOOL_NAME] = toolName;
 		attrs[ATTR_TOOL_CALL_ID] = toolCallId;
 		if (this.captureToolContent && input !== undefined) {
-			attrs[ATTR_TOOL_ARGUMENTS] =
-				typeof input === "string" ? input : clampAttr(input);
+			if (typeof input === "string") {
+				attrs[ATTR_TOOL_ARGUMENTS] = input;
+			} else {
+				attrs[ATTR_TOOL_ARGUMENTS] = clampAttr(input);
+				attrs[ATTR_LOGFIRE_JSON_SCHEMA] = buildLogfireJsonSchema({
+					[ATTR_TOOL_ARGUMENTS]: "object",
+				});
+			}
 		}
 		const span = this.opts.tracer.startSpan(SPAN_RUNNING_TOOL, { attributes: attrs }, parentCtx);
 		this.tools.set(toolCallId, { span, ctx: trace.setSpan(parentCtx, span) });

@@ -126,9 +126,11 @@ export function resolveLogfireWriterConfig(
 
 function normalizeCapture(v: string | undefined): "metadata_only" | "no_tool_content" | "full" {
 	const s = v?.trim().toLowerCase();
-	if (s === "full" || s === "true" || s === "1") return "full";
 	if (s === "no_tool_content") return "no_tool_content";
-	return "metadata_only";
+	if (s === "metadata_only" || s === "metadata" || s === "none" || s === "0" || s === "false")
+		return "metadata_only";
+	// Default: capture content, like pydantic-ai (so Logfire shows input/output/thoughts).
+	return "full";
 }
 
 /** Mask a token for safe display: keep the prefix, hide the secret tail. */
