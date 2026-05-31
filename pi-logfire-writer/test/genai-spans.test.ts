@@ -236,6 +236,29 @@ test("every emitted span conforms to the shared pydantic-ai shape spec", () => {
 	}
 });
 
+test("tool error is recorded as an OTel exception event + ERROR status", () => {
+	const { exporter, tracker } = setup();
+	tracker.startAgentRun("do a thing", "sys");
+	tracker.startChat("m");
+	tracker.endChatWithAssistant({ role: "assistant", model: "m", finishReason: "tool_call", usage: {}, content: [{ type: "toolCall", id: "tc1", name: "boom", arguments: {} }] });
+	tracker.startTool("tc1", "boom", {});
+	tracker.endTool("tc1", {
+		isError: true,
+		result: { content: [{ type: "text", text: "Error: weather service exploded\n  at foo (x.ts:1)\n  at bar (y.ts:2)" }] },
+	});
+	tracker.endAgentRun();
+
+	const tool = exporter.getFinishedSpans().find((s) => s.name === "running tool")!;
+	// status ERROR
+	assert.equal(tool.status.code, 2); // SpanStatusCode.ERROR
+	// an "exception" event with the OTel exception attributes
+	const ev = tool.events.find((e) => e.name === "exception");
+	assert.ok(ev, "expected an exception event");
+	assert.equal(ev?.attributes?.["exception.type"], "ToolError");
+	assert.match(String(ev?.attributes?.["exception.message"]), /weather service exploded/);
+	assert.match(String(ev?.attributes?.["exception.stacktrace"]), /at foo \(x\.ts:1\)/);
+});
+
 test("paused tracker emits no spans; resuming restores tracing", () => {
 	const { exporter, tracker } = setup();
 

@@ -28,7 +28,6 @@ import {
 	ATTR_CONVERSATION_ID,
 	ATTR_LOGFIRE_JSON_SCHEMA,
 	buildLogfireJsonSchema,
-	ATTR_ERROR_TYPE,
 	ATTR_FINISH_REASONS,
 	ATTR_INPUT_MESSAGES,
 	ATTR_OPERATION_NAME,
@@ -292,6 +291,12 @@ export class GenAiSpanTracker {
 			this.conversation.push({ role: "assistant", parts });
 		}
 
+		// A failed LLM request is recorded as an exception on the chat span.
+		if (finish === "error") {
+			const em = typeof message.errorMessage === "string" ? message.errorMessage : "LLM request failed";
+			this.recordException(span, "LlmRequestError", em);
+		}
+
 		span.end();
 		this.chat = null;
 	}
@@ -330,21 +335,38 @@ export class GenAiSpanTracker {
 	endTool(toolCallId: string, args: { isError?: boolean; result?: unknown }): void {
 		const slot = this.tools.get(toolCallId);
 		if (!slot) return;
-		if (this.captureToolContent && args.result !== undefined) {
-			slot.span.setAttribute(ATTR_TOOL_RESPONSE, extractToolResultText(args.result));
+		const text = args.result !== undefined ? extractToolResultText(args.result) : "";
+		if (this.captureToolContent && text) {
+			slot.span.setAttribute(ATTR_TOOL_RESPONSE, text);
 		}
 		if (args.isError) {
-			slot.span.setAttribute(ATTR_ERROR_TYPE, "tool_error");
-			slot.span.setStatus({ code: SpanStatusCode.ERROR });
+			// Record the tool failure as an OTel exception event so Logfire shows
+			// it as a traceback (is_exception / exception_type / exception_stacktrace),
+			// matching how pydantic-ai represents tool exceptions.
+			const detail = this.captureToolContent ? text : "";
+			this.recordException(slot.span, "ToolError", detail || "tool execution failed");
 		}
 		slot.span.end();
 		this.tools.delete(toolCallId);
 	}
 
+	/**
+	 * Record an exception on a span the OTel way: an `exception` span event
+	 * (exception.type / message / stacktrace) plus span status = ERROR. Logfire
+	 * surfaces this into is_exception / exception_* columns and a traceback view.
+	 */
+	private recordException(span: Span, type: string, detail: string): void {
+		const message = (detail || type).split("\n")[0].slice(0, 500);
+		// pi rarely provides a real stack; use the full detail text as the
+		// stacktrace so the Logfire traceback panel shows whatever pi captured.
+		span.recordException({ name: type, message, stack: detail || message });
+		span.setStatus({ code: SpanStatusCode.ERROR, message });
+	}
+
 	private markError(span: Span, error: unknown): void {
 		const name = (error as Error)?.name ?? "Error";
-		span.setAttribute(ATTR_ERROR_TYPE, name);
-		span.setStatus({ code: SpanStatusCode.ERROR, message: String((error as Error)?.message ?? error) });
+		const detail = String((error as Error)?.stack ?? (error as Error)?.message ?? error);
+		this.recordException(span, name, detail);
 	}
 
 	activeTraceId(): string | undefined {
