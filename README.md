@@ -18,6 +18,31 @@ Run both together and pi can **read its own activity**: the writer records each
 pi session as GenAI spans, and the reader lets pi query those spans back from
 Logfire.
 
+## ⚠️ Limitation: pi cannot observe its *current* turn
+
+Self-observation is **not real-time within a single turn**. pi can only query
+activity from a *prior, already-flushed* run — not what it is doing right now.
+
+Why:
+
+1. **The agent-run span closes at `agent_end`.** The current `agent run` (and its
+   child `chat` / `running tool` spans) are still open while pi is working, so
+   they don't exist in Logfire yet.
+2. **The writer batches spans.** It uses an OTLP `BatchSpanProcessor` that flushes
+   on a timer (~5 s) and on `session_shutdown` — not immediately per span.
+3. **Logfire ingestion lag.** Even after export, spans take a few seconds to
+   become queryable.
+
+**Consequence:** a prompt like *"query Logfire for what you just did"* will miss
+the current turn's spans. Self-observation works **across turns/runs**: act in
+one run, then query in a later one (after flush + a few seconds of ingestion).
+If you need the most recent run included, end the session (forces a flush) and
+wait briefly before querying.
+
+This is inherent to async OTLP export + a remote backend; it is **not** a bug in
+either plugin. A future option could expose a `/logfire-flush` command (force
+`forceFlush()`), but it cannot remove ingestion lag or close the in-flight span.
+
 ## Layout
 
 ```
