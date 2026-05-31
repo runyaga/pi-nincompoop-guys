@@ -236,6 +236,29 @@ test("every emitted span conforms to the shared pydantic-ai shape spec", () => {
 	}
 });
 
+test("paused tracker emits no spans; resuming restores tracing", () => {
+	const { exporter, tracker } = setup();
+
+	tracker.setPaused(true);
+	tracker.startAgentRun("hidden prompt", "sys");
+	tracker.noteUserMessage("hidden");
+	tracker.startChat("m");
+	tracker.endChatWithAssistant({ role: "assistant", model: "m", finishReason: "stop", usage: {}, content: [{ type: "text", text: "x" }] });
+	tracker.startTool("tc1", "bash", { cmd: "ls" });
+	tracker.endTool("tc1", { isError: false, result: "ok" });
+	tracker.endAgentRun();
+	assert.equal(exporter.getFinishedSpans().length, 0, "no spans while paused");
+
+	tracker.setPaused(false);
+	tracker.startAgentRun("visible prompt", "sys");
+	tracker.startChat("m");
+	tracker.endChatWithAssistant({ role: "assistant", model: "m", finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: "text", text: "hi" }] });
+	tracker.endAgentRun();
+	const names = exporter.getFinishedSpans().map((s) => s.name);
+	assert.ok(names.includes("agent run"));
+	assert.ok(names.includes("chat m"));
+});
+
 test("metadata_only capture omits message bodies but keeps structure", () => {
 	const exporter = new InMemorySpanExporter();
 	const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });

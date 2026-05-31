@@ -11,6 +11,7 @@ const OWNED_ENV = [
 	"PI_LOGFIRE_WRITER_DISABLED",
 	"PI_LOGFIRE_WRITER_CAPTURE_CONTENT",
 	"PI_OTEL_CAPTURE_CONTENT",
+	"PI_LOGFIRE_WRITER_START_PAUSED",
 ];
 
 let saved: Record<string, string | undefined>;

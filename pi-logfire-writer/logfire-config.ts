@@ -37,6 +37,8 @@ export interface LogfireWriterConfig {
 	serviceName: string;
 	/** How much GenAI content to record on spans. */
 	captureContent: "metadata_only" | "no_tool_content" | "full";
+	/** Start with tracing paused (toggle at runtime with /logfire-pause|resume). */
+	startPaused: boolean;
 }
 
 const REGION_BASE: Record<LogfireRegion, string> = {
@@ -66,7 +68,8 @@ export function buildTracesEndpoint(baseOrFull: string): string {
 }
 
 function envFlagTrue(v: string | undefined): boolean {
-	return v === "1" || v?.toLowerCase() === "true";
+	const s = v?.trim().toLowerCase();
+	return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
 /** Resolve the writer configuration from an environment map (defaults to process.env). */
@@ -121,6 +124,8 @@ export function resolveLogfireWriterConfig(
 		protocol: "http/protobuf",
 		serviceName,
 		captureContent,
+		// PI_LOGFIRE_WRITER_START_PAUSED=True|1 -> start configured-but-paused (default off).
+		startPaused: envFlagTrue(env.PI_LOGFIRE_WRITER_START_PAUSED),
 	};
 }
 

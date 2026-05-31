@@ -90,9 +90,20 @@ export class GenAiSpanTracker {
 	private lastModel: string | undefined;
 	/** Stable per-agent-run id linking agent run -> chat -> tool spans. */
 	private callId = "";
+	/** When paused, no new spans are created (in-flight runs still finish). */
+	private paused = false;
 
 	constructor(opts: GenAiTrackerOpts) {
 		this.opts = opts;
+	}
+
+	/** Pause/resume span creation at runtime. */
+	setPaused(paused: boolean): void {
+		this.paused = paused;
+	}
+
+	isPaused(): boolean {
+		return this.paused;
 	}
 
 	private get captureMessages(): boolean {
@@ -119,6 +130,7 @@ export class GenAiSpanTracker {
 	// ---- agent run --------------------------------------------------------
 
 	startAgentRun(prompt: string | undefined, systemPrompt?: string): void {
+		if (this.paused) return;
 		if (this.agent) return;
 		this.conversation = [];
 		this.lastAssistantText = "";
@@ -176,12 +188,14 @@ export class GenAiSpanTracker {
 	}
 
 	noteUserMessage(content: unknown): void {
+		if (this.paused) return;
 		if (!this.captureMessages) return;
 		const text = extractMessageText(content);
 		if (text) this.conversation.push({ role: "user", parts: [{ type: "text", content: text }] });
 	}
 
 	noteToolResultMessage(msg: { toolCallId: string; toolName?: string; content: unknown }): void {
+		if (this.paused) return;
 		if (!this.captureToolContent || !msg.toolCallId) return;
 		const text = extractMessageText(msg.content);
 		this.conversation.push({
@@ -200,6 +214,7 @@ export class GenAiSpanTracker {
 	// ---- chat <model> -----------------------------------------------------
 
 	startChat(model?: string): void {
+		if (this.paused) return;
 		if (!this.agent) return;
 		if (this.chat) {
 			this.chat.span.end();
@@ -291,7 +306,9 @@ export class GenAiSpanTracker {
 	// ---- running tool -----------------------------------------------------
 
 	startTool(toolCallId: string, toolName: string, input: unknown): void {
-		const parentCtx = this.agent?.ctx ?? otelContext.active();
+		// Skip when paused or when there is no active run (avoids orphan spans).
+		if (this.paused || !this.agent) return;
+		const parentCtx = this.agent.ctx;
 		const attrs = this.commonAttrs();
 		attrs[ATTR_OPERATION_NAME] = OP_EXECUTE_TOOL;
 		attrs[ATTR_TOOL_NAME] = toolName;

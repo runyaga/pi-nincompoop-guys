@@ -53,7 +53,8 @@ pi -e ./index.ts
 | `LOGFIRE_REGION` | no | inferred from token, else `us` | `us` or `eu`. |
 | `LOGFIRE_WRITER_ENDPOINT` | no | region URL | Override OTLP base for self-hosted Logfire. |
 | `PI_LOGFIRE_WRITER_CAPTURE_CONTENT` | no | `full` | `metadata_only` \| `no_tool_content` \| `full`. Defaults to `full` (pydantic-ai parity: records prompts/responses/tool IO so Logfire shows Input/Output/Thoughts). Set `metadata_only` to omit message bodies. `PI_OTEL_CAPTURE_CONTENT` also accepted. |
-| `PI_LOGFIRE_WRITER_DISABLED` | no | — | `1` to hard-disable export. |
+| `PI_LOGFIRE_WRITER_START_PAUSED` | no | `false` | `True`/`1` starts configured-but-**paused** (no spans until `/logfire-resume`). |
+| `PI_LOGFIRE_WRITER_DISABLED` | no | — | `1` to hard-disable export (no commands, no wiring). |
 
 Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
 (traces are exported over OTLP/HTTP protobuf with `Authorization: <token>`).
@@ -68,10 +69,17 @@ Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
 > bodies. Message attributes carry `logfire.json_schema` so Logfire renders them
 > as structured panels rather than raw strings.
 
-## Command
+## Commands
 
-`/logfire-writer-status` — shows whether export is enabled, the target endpoint,
-region, masked token, and the capture mode.
+| Command | What it does |
+|---------|--------------|
+| `/logfire-writer-status` | Show whether export is enabled/paused, the endpoint, region, masked token, and capture mode |
+| `/logfire-pause` | Pause tracing — stop emitting spans (an in-flight run still finishes) |
+| `/logfire-resume` | Resume tracing |
+| `/logfire-toggle` | Toggle tracing on/off |
+
+You don't always need tracing — pause it for a few prompts, then resume. Start a
+session already paused with `PI_LOGFIRE_WRITER_START_PAUSED=1`.
 
 ## How it maps pi → GenAI spans
 

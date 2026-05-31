@@ -83,6 +83,24 @@ test("LOGFIRE_TOKEN is accepted as a fallback for the write token", () => {
 	assert.equal(cfg.token, US_TOKEN);
 });
 
+test("PI_LOGFIRE_WRITER_START_PAUSED controls startPaused (default off)", () => {
+	assert.equal(resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN }).startPaused, false);
+	for (const v of ["True", "true", "1", "yes", "on"]) {
+		assert.equal(
+			resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN, PI_LOGFIRE_WRITER_START_PAUSED: v }).startPaused,
+			true,
+			`PI_LOGFIRE_WRITER_START_PAUSED=${v} should pause`,
+		);
+	}
+	for (const v of ["False", "false", "0", ""]) {
+		assert.equal(
+			resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN, PI_LOGFIRE_WRITER_START_PAUSED: v }).startPaused,
+			false,
+			`PI_LOGFIRE_WRITER_START_PAUSED=${v} should not pause`,
+		);
+	}
+});
+
 test("missing token disables export with a reason", () => {
 	const cfg = resolveLogfireWriterConfig({});
 	assert.equal(cfg.enabled, false);

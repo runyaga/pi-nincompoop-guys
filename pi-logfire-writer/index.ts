@@ -35,15 +35,47 @@ import { initSdk, shutdownSdk } from "./otel-sdk.ts";
 export default function (pi: ExtensionAPI): void {
 	const config: LogfireWriterConfig = resolveLogfireWriterConfig(process.env);
 
+	let tracker: GenAiSpanTracker | null = null;
+	// Tracing on/off, toggleable at runtime. Survives tracker re-creation.
+	let paused = config.startPaused;
+
 	pi.registerCommand("logfire-writer-status", {
 		description: "Show pi-logfire-writer (Logfire OTLP trace export) status",
 		handler: async (_args, ctx: ExtensionContext) => {
+			const state = !config.enabled ? "" : paused ? " — PAUSED" : " — tracing";
 			ctx.ui.notify(
-				`pi-logfire-writer: ${describeConfig(config)}, capture=${config.captureContent}`,
-				config.enabled ? "info" : "warning",
+				`pi-logfire-writer: ${describeConfig(config)}, capture=${config.captureContent}${state}`,
+				config.enabled && !paused ? "info" : "warning",
 			);
 		},
 	});
+
+	if (config.enabled) {
+		pi.registerCommand("logfire-pause", {
+			description: "Pause Logfire tracing (stop emitting spans until resumed)",
+			handler: async (_args, ctx: ExtensionContext) => {
+				paused = true;
+				tracker?.setPaused(true);
+				ctx.ui.notify("pi-logfire-writer: tracing PAUSED", "warning");
+			},
+		});
+		pi.registerCommand("logfire-resume", {
+			description: "Resume Logfire tracing",
+			handler: async (_args, ctx: ExtensionContext) => {
+				paused = false;
+				tracker?.setPaused(false);
+				ctx.ui.notify("pi-logfire-writer: tracing RESUMED", "info");
+			},
+		});
+		pi.registerCommand("logfire-toggle", {
+			description: "Toggle Logfire tracing on/off",
+			handler: async (_args, ctx: ExtensionContext) => {
+				paused = !paused;
+				tracker?.setPaused(paused);
+				ctx.ui.notify(`pi-logfire-writer: tracing ${paused ? "PAUSED" : "RESUMED"}`, paused ? "warning" : "info");
+			},
+		});
+	}
 
 	if (!config.enabled || !config.token) {
 		pi.on("session_start", async (_event, ctx: ExtensionContext) => {
@@ -55,7 +87,6 @@ export default function (pi: ExtensionAPI): void {
 		return;
 	}
 
-	let tracker: GenAiSpanTracker | null = null;
 	// pydantic-ai uses a clean UUID conversation id (not the session filename).
 	let conversationId: string | undefined;
 
@@ -74,7 +105,11 @@ export default function (pi: ExtensionAPI): void {
 			provider: "pi",
 			conversationId: () => conversationId,
 		});
-		ctx.ui.notify(`pi-logfire-writer: traces -> ${config.tracesUrl}`, "info");
+		tracker.setPaused(paused);
+		ctx.ui.notify(
+			`pi-logfire-writer: traces -> ${config.tracesUrl}${paused ? " (PAUSED — /logfire-resume to start)" : ""}`,
+			"info",
+		);
 	});
 
 	pi.on("before_agent_start", async (event, _ctx) => {
