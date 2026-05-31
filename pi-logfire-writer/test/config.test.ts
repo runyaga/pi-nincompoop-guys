@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-	applyOtelEnv,
-	buildOtelEnv,
 	buildTracesEndpoint,
 	describeConfig,
 	maskToken,
@@ -100,30 +98,26 @@ test("PI_LOGFIRE_WRITER_DISABLED hard-disables even with a token", () => {
 	assert.match(cfg.disabledReason ?? "", /DISABLED/);
 });
 
-test("buildOtelEnv puts the raw token in Authorization (no Bearer prefix)", () => {
-	const cfg = resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN });
-	const env = buildOtelEnv(cfg);
-	assert.equal(env.OTEL_EXPORTER_OTLP_ENDPOINT, cfg.tracesUrl);
-	assert.equal(env.OTEL_EXPORTER_OTLP_PROTOCOL, "http/protobuf");
-	assert.equal(env.OTEL_EXPORTER_OTLP_HEADERS, `Authorization=${US_TOKEN}`);
-	assert.equal(env.OTEL_SERVICE_NAME, "pi");
-});
-
-test("applyOtelEnv writes preset keys but never clobbers user-set values", () => {
-	const cfg = resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN });
-	const target: NodeJS.ProcessEnv = {
-		OTEL_EXPORTER_OTLP_ENDPOINT: "http://user-collector:4318/v1/traces",
-	};
-	const written = applyOtelEnv(cfg, target);
-	// user endpoint preserved
+test("captureContent defaults to metadata_only and honors overrides", () => {
 	assert.equal(
-		target.OTEL_EXPORTER_OTLP_ENDPOINT,
-		"http://user-collector:4318/v1/traces",
+		resolveLogfireWriterConfig({ LOGFIRE_WRITE_TOKEN: US_TOKEN }).captureContent,
+		"metadata_only",
 	);
-	assert.ok(!written.includes("OTEL_EXPORTER_OTLP_ENDPOINT"));
-	// headers/protocol still applied
-	assert.equal(target.OTEL_EXPORTER_OTLP_HEADERS, `Authorization=${US_TOKEN}`);
-	assert.ok(written.includes("OTEL_EXPORTER_OTLP_HEADERS"));
+	assert.equal(
+		resolveLogfireWriterConfig({
+			LOGFIRE_WRITE_TOKEN: US_TOKEN,
+			PI_LOGFIRE_WRITER_CAPTURE_CONTENT: "full",
+		}).captureContent,
+		"full",
+	);
+	// pi-otel's env var is accepted for compatibility
+	assert.equal(
+		resolveLogfireWriterConfig({
+			LOGFIRE_WRITE_TOKEN: US_TOKEN,
+			PI_OTEL_CAPTURE_CONTENT: "no_tool_content",
+		}).captureContent,
+		"no_tool_content",
+	);
 });
 
 test("maskToken hides the secret tail but keeps the prefix", () => {

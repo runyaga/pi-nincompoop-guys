@@ -1,58 +1,51 @@
 /**
  * pi-logfire-writer
  *
- * Ships pi's OpenTelemetry traces to Pydantic Logfire.
+ * Ships pi's activity to Pydantic Logfire as OpenTelemetry traces shaped like
+ * pydantic-ai's, so they render in Logfire's GenAI / agent views:
  *
- * This is a thin Logfire *preset* built on top of the `pi-otel` extension:
- *   - pi-otel does the heavy lifting (wiring pi's lifecycle events into an OTel
- *     span tree: pi.interaction -> pi.llm_request / pi.tool.<name>, exported via
- *     OTLP).
- *   - pi-logfire-writer points that export at Logfire's OTLP HTTP ingest
- *     endpoint and authenticates with a Logfire *write* token, so you don't
- *     have to hand-configure OTEL_EXPORTER_OTLP_* yourself.
+ *   agent run                 (gen_ai.operation.name = invoke_agent)
+ *   ├─ chat <model>           (gen_ai.operation.name = chat)
+ *   └─ running tool           (gen_ai.operation.name = execute_tool)
  *
- * Configuration (all via environment, token is never hardcoded):
- *   LOGFIRE_WRITE_TOKEN   (required)  Logfire write token (project:write scope).
- *   LOGFIRE_REGION        (optional)  "us" | "eu". Defaults: inferred from the
- *                                     token prefix, else "us".
- *   LOGFIRE_WRITER_ENDPOINT (optional) Override the OTLP base/traces URL for a
- *                                     self-hosted Logfire instance.
+ * Span shape / message conventions are modeled on pydantic-ai (verified against
+ * live Logfire traces) and on the pi-otel extension's event→span mapping.
+ *
+ * Configuration (token never hardcoded):
+ *   LOGFIRE_WRITE_TOKEN   (required)  Logfire write token (project:write).
+ *   LOGFIRE_REGION        (optional)  us | eu (default inferred from token).
+ *   LOGFIRE_WRITER_ENDPOINT (optional) override OTLP base for self-hosted.
+ *   PI_LOGFIRE_WRITER_CAPTURE_CONTENT  metadata_only | no_tool_content | full
+ *                                     (default metadata_only; "full" records
+ *                                      prompts/responses/tool IO like pydantic-ai).
  *   PI_LOGFIRE_WRITER_DISABLED=1      Hard-disable export.
- *
- * pi-otel's own PI_OTEL_* / OTEL_* knobs (captureContent, sampleRatio, ...)
- * still apply. Explicit user-set OTEL_EXPORTER_OTLP_* values are respected and
- * not overwritten.
- *
- * Scope: traces only. pi-otel sends every signal to a single verbatim endpoint,
- * so enabling metrics/logs would mis-route them to /v1/traces; this preset
- * therefore targets traces, which is Logfire's primary view.
  */
 
+import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import piOtel from "pi-otel";
+import { GenAiSpanTracker } from "./genai-spans.ts";
+import { ATTR_RESPONSE_ID } from "./genai-attrs.ts";
 import {
-	applyOtelEnv,
 	describeConfig,
-	resolveLogfireWriterConfig,
 	type LogfireWriterConfig,
+	resolveLogfireWriterConfig,
 } from "./logfire-config.ts";
+import { initSdk, shutdownSdk } from "./otel-sdk.ts";
 
 export default function (pi: ExtensionAPI): void {
 	const config: LogfireWriterConfig = resolveLogfireWriterConfig(process.env);
 
-	// Status command is always available, even when disabled.
 	pi.registerCommand("logfire-writer-status", {
 		description: "Show pi-logfire-writer (Logfire OTLP trace export) status",
 		handler: async (_args, ctx: ExtensionContext) => {
 			ctx.ui.notify(
-				`pi-logfire-writer: ${describeConfig(config)}`,
+				`pi-logfire-writer: ${describeConfig(config)}, capture=${config.captureContent}`,
 				config.enabled ? "info" : "warning",
 			);
 		},
 	});
 
-	if (!config.enabled) {
-		// Do not wire pi-otel against an unconfigured endpoint; just inform once.
+	if (!config.enabled || !config.token) {
 		pi.on("session_start", async (_event, ctx: ExtensionContext) => {
 			ctx.ui.notify(
 				`pi-logfire-writer disabled: ${config.disabledReason}. Set LOGFIRE_WRITE_TOKEN and restart pi.`,
@@ -62,34 +55,93 @@ export default function (pi: ExtensionAPI): void {
 		return;
 	}
 
-	// Apply the Logfire OTLP preset BEFORE pi-otel resolves its config (it reads
-	// these env vars at session_start). Done at load time, which runs first.
-	applyOtelEnv(config, process.env);
+	let tracker: GenAiSpanTracker | null = null;
+	let sessionId: string | undefined;
 
-	// Track whether pi-otel managed to wire its exporter this session.
-	let wired = false;
-	pi.events.on("pi-otel:status", (s: unknown) => {
-		const state = (s as { state?: string } | undefined)?.state;
-		if (state === "ready") wired = true;
-		else if (state === "shutdown" || state === "disabled") wired = false;
+	pi.on("session_start", async (_event, ctx: ExtensionContext) => {
+		try {
+			const file = ctx.sessionManager?.getSessionFile?.();
+			if (file) sessionId = basename(file, ".jsonl");
+		} catch {
+			// ephemeral session
+		}
+		const tracer = initSdk({
+			tracesUrl: config.tracesUrl,
+			token: config.token as string,
+			serviceName: config.serviceName,
+		});
+		tracker = new GenAiSpanTracker({
+			tracer,
+			captureContent: config.captureContent,
+			agentName: config.serviceName,
+			system: "pi",
+			provider: "pi",
+			conversationId: () => sessionId,
+		});
+		ctx.ui.notify(`pi-logfire-writer: traces -> ${config.tracesUrl}`, "info");
 	});
 
-	// Delegate to the pi-otel engine — it now exports to Logfire.
-	piOtel(pi);
+	pi.on("before_agent_start", async (event, _ctx) => {
+		const e = event as { prompt?: string; systemPrompt?: string };
+		tracker?.startAgentRun(e?.prompt, e?.systemPrompt);
+	});
 
-	// Registered AFTER pi-otel's own session_start, so this runs once pi-otel has
-	// finished its startup wiring attempt. pi-otel gates wiring behind a 300ms
-	// raw-TCP reachability probe meant for local collectors; against Logfire's
-	// HTTPS cloud endpoint that probe can flap on a cold start and skip wiring.
-	// If it didn't wire, force it via pi-otel's documented dashboard-ready hook,
-	// which calls wireSdk directly without probing.
-	pi.on("session_start", async (_event, ctx: ExtensionContext) => {
-		if (!wired) {
-			pi.events.emit("pi-otel:dashboard-ready", {
-				endpoint: config.tracesUrl,
-				protocol: config.protocol,
+	pi.on("message_start", async (event, _ctx) => {
+		const msg = (event as { message?: Record<string, unknown> })?.message;
+		if (!msg) return;
+		if (msg.role === "user") {
+			tracker?.noteUserMessage(msg.content);
+		} else if (msg.role === "toolResult") {
+			tracker?.noteToolResultMessage({
+				toolCallId: msg.toolCallId as string,
+				toolName: msg.toolName as string | undefined,
+				content: msg.content,
 			});
 		}
-		ctx.ui.notify(`pi-logfire-writer: traces -> ${config.tracesUrl}`, "info");
+	});
+
+	pi.on("before_provider_request", async (event, _ctx) => {
+		const payload = (event as { payload?: Record<string, unknown> })?.payload;
+		const model = payload?.model ?? payload?.modelId ?? payload?.modelName;
+		tracker?.startChat(typeof model === "string" ? model : undefined);
+	});
+
+	pi.on("after_provider_response", async (event, _ctx) => {
+		const e = event as { headers?: Record<string, string> };
+		const headers = e?.headers ?? {};
+		const respId =
+			headers["x-request-id"] ??
+			headers["request-id"] ??
+			headers["anthropic-request-id"] ??
+			headers["openai-response-id"];
+		if (typeof respId === "string") tracker?.setChatAttrs({ [ATTR_RESPONSE_ID]: respId });
+	});
+
+	pi.on("message_end", async (event, _ctx) => {
+		const msg = (event as { message?: Record<string, unknown> })?.message;
+		if (!msg || msg.role !== "assistant") return;
+		tracker?.endChatWithAssistant(msg);
+	});
+
+	pi.on("tool_execution_start", async (event, _ctx) => {
+		const e = event as { toolCallId?: string; toolName?: string; args?: unknown };
+		if (!e?.toolCallId || !e?.toolName) return;
+		tracker?.startTool(e.toolCallId, e.toolName, e.args);
+	});
+
+	pi.on("tool_execution_end", async (event, _ctx) => {
+		const e = event as { toolCallId?: string; isError?: boolean; result?: unknown };
+		if (!e?.toolCallId) return;
+		tracker?.endTool(e.toolCallId, { isError: !!e.isError, result: e.result });
+	});
+
+	pi.on("agent_end", async (_event, _ctx) => {
+		tracker?.endAgentRun();
+	});
+
+	pi.on("session_shutdown", async (_event, _ctx) => {
+		tracker?.endAgentRun();
+		tracker = null;
+		await shutdownSdk();
 	});
 }

@@ -1,116 +1,103 @@
 # pi-logfire-writer
 
 A [pi](https://github.com/earendil-works/pi) coding-agent extension that **ships
-pi's OpenTelemetry traces to [Pydantic Logfire](https://pydantic.dev/logfire)**.
+pi's activity to [Pydantic Logfire](https://pydantic.dev/logfire) as
+OpenTelemetry traces shaped exactly like [pydantic-ai](https://ai.pydantic.dev)'s** —
+so pi sessions render in Logfire's GenAI / agent views just like a pydantic-ai app.
 
 It is the *write* counterpart to a Logfire MCP *reader*: instead of querying
-telemetry, this **produces** it — every pi prompt becomes a span tree in your
-Logfire project.
+telemetry, it **produces** it.
 
-## Built on pi-otel
-
-This is a thin **Logfire preset** on top of [`pi-otel`](https://github.com/NikiforovAll/pi-otel),
-which does the heavy lifting: it wires pi's lifecycle events into an OTel span
-tree and exports it via OTLP.
+## Span shape (matches pydantic-ai)
 
 ```
-pi (agent)
-  └─ pi-logfire-writer        ← this package: Logfire endpoint + write-token auth
-       └─ pi-otel             ← span tree: pi.interaction → pi.llm_request / pi.tool.<name>
-            └─ OTLP/HTTP (protobuf, Authorization: <write-token>)
-                 └─ https://logfire-us.pydantic.dev:443/v1/traces
+agent run                 gen_ai.operation.name = invoke_agent
+├─ chat <model>           gen_ai.operation.name = chat
+└─ running tool           gen_ai.operation.name = execute_tool
 ```
 
-pi-logfire-writer's job is purely to point pi-otel's export at Logfire and
-authenticate it, so you don't hand-configure `OTEL_EXPORTER_OTLP_*` yourself.
+The structure and attributes were reverse-engineered from real pydantic-ai
+traces in Logfire and mirrored:
+
+| span | key attributes |
+|------|----------------|
+| `agent run` | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name`, `gen_ai.conversation.id`, aggregate `gen_ai.usage.*`, `final_result`, `model_name` |
+| `chat <model>` | `gen_ai.operation.name=chat`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.finish_reasons`, `gen_ai.usage.*`, `gen_ai.input.messages`, `gen_ai.output.messages` |
+| `running tool` | `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `tool_arguments`, `tool_response` |
+
+`gen_ai.input.messages` / `gen_ai.output.messages` use pydantic-ai's
+`{role, parts:[{type:"text"|"thinking"|"tool_call", …}]}` shape and accumulate
+the running conversation across turns.
 
 ## Requirements
 
 - `pi` (`@earendil-works/pi-coding-agent`)
 - A Logfire **write token** (`project:write` scope)
-- Node.js ≥ 20
+- Node.js ≥ 18
 
 ## Install
 
 ```bash
-pi install git:github.com/<you>/pi-logfire-writer
-```
-
-Or load locally for development:
-
-```bash
-git clone <this repo> && cd pi-logfire-writer
+git clone <repo> && cd pi-logfire-writer
 npm install
 export LOGFIRE_WRITE_TOKEN="pylf_v2_us_..."
 pi -e ./index.ts
 ```
 
-## Configuration
-
-The write token is read from the environment and is **never hardcoded**.
+## Configuration (token never hardcoded)
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
 | `LOGFIRE_WRITE_TOKEN` | yes | — | Logfire write token. `LOGFIRE_TOKEN` also accepted. |
 | `LOGFIRE_REGION` | no | inferred from token, else `us` | `us` or `eu`. |
-| `LOGFIRE_WRITER_ENDPOINT` | no | region URL | Override base/OTLP URL for self-hosted Logfire. |
-| `PI_LOGFIRE_WRITER_DISABLED` | no | — | Set to `1` to hard-disable export. |
+| `LOGFIRE_WRITER_ENDPOINT` | no | region URL | Override OTLP base for self-hosted Logfire. |
+| `PI_LOGFIRE_WRITER_CAPTURE_CONTENT` | no | `metadata_only` | `metadata_only` \| `no_tool_content` \| `full`. `full` records prompts/responses/tool IO (pydantic-ai parity). `PI_OTEL_CAPTURE_CONTENT` also accepted. |
+| `PI_LOGFIRE_WRITER_DISABLED` | no | — | `1` to hard-disable export. |
 
-The endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`.
-The explicit `:443` is intentional — pi-otel probes the endpoint (and refuses
-one without a port) and passes it verbatim to the OTLP exporter.
+Endpoint resolves to `https://logfire-<region>.pydantic.dev:443/v1/traces`
+(traces are exported over OTLP/HTTP protobuf with `Authorization: <token>`).
 
 > **Token region must match.** A `pylf_v2_us_*` token only authenticates against
-> the US endpoint, `pylf_v?_eu_*` only against EU. Mismatch → `Unauthorized`.
+> the US endpoint; `pylf_v?_eu_*` only against EU.
 
-pi-otel's own knobs still apply (e.g. `PI_OTEL_CAPTURE_CONTENT`,
-`OTEL_SERVICE_NAME`, `sampleRatio` in `.pi/settings.json`). Any
-`OTEL_EXPORTER_OTLP_*` value you set yourself is respected and not overwritten.
+> **Content capture defaults to `metadata_only`** — span structure, models,
+> token usage, finish reasons, and tool names are recorded, but no message
+> bodies. Set `PI_LOGFIRE_WRITER_CAPTURE_CONTENT=full` to populate the
+> `gen_ai.*.messages` panels like pydantic-ai does.
 
-See [`.env.example`](./.env.example).
+## Command
 
-## Commands
+`/logfire-writer-status` — shows whether export is enabled, the target endpoint,
+region, masked token, and the capture mode.
 
-| Command | What it does |
-|---------|--------------|
-| `/logfire-writer-status` | Show whether export is enabled, the target endpoint, region, and a masked token |
+## How it maps pi → GenAI spans
 
-## What gets exported
-
-pi-otel emits a per-prompt span tree:
-
-- `pi.interaction` — one per user prompt
-  - `pi.llm_request` — model, token usage, finish reason, response id
-  - `pi.tool.<name>` — one per tool call, with id and error status
-
-By default only metadata is captured (no prompt/response text); raise
-`PI_OTEL_CAPTURE_CONTENT` to include content. Scope is **traces only** — pi-otel
-sends every signal to a single verbatim endpoint, so metrics/logs would
-mis-route to `/v1/traces` and are intentionally not enabled by this preset.
-
-## A note on the startup "not reachable" message
-
-pi-otel gates wiring behind a 300 ms raw-TCP reachability probe designed for
-local collectors. Against Logfire's HTTPS cloud endpoint that probe can
-occasionally flap on a cold start and print *"OTLP endpoint … not reachable"*.
-pi-logfire-writer handles this: it force-wires the exporter via pi-otel's
-`pi-otel:dashboard-ready` hook (which skips the probe), so export still works.
-Run `/logfire-writer-status` to confirm, or check your Logfire Live view.
+| pi lifecycle event | effect |
+|--------------------|--------|
+| `before_agent_start` | open `agent run` (captures prompt + system prompt) |
+| `before_provider_request` | open `chat <model>` (snapshots conversation as input messages) |
+| `message_end` (assistant) | finalize `chat`: output messages, finish reason, usage, response model |
+| `tool_execution_start` / `_end` | open/close `running tool` with args + response |
+| `agent_end` | close `agent run` with final result + aggregate usage |
+| `session_shutdown` | flush + shut down the exporter |
 
 ## Development & tests
 
 ```bash
 npm install
-npm test        # node --test (unit + integration)
+npm test        # node --test — 21 tests
 ```
 
-- `logfire-config.ts` — pure config resolution (token → region → endpoint →
-  OTLP env). Fully unit-tested.
-- `index.ts` — applies the preset and delegates to pi-otel; integration-tested
-  with a fake `pi` (verifies preset application, no-clobber of user env,
-  delegation, and the disabled path).
+- `genai-attrs.ts` — pure GenAI attribute constants + message extraction helpers
+- `genai-spans.ts` — the span tracker (`agent run` / `chat` / `running tool`)
+- `otel-sdk.ts` — trace-only OTLP→Logfire SDK bootstrap
+- `logfire-config.ts` — token/region/endpoint/capture resolution
+- `index.ts` — wires pi lifecycle events into the tracker
+- `test/` — config resolution, extension wiring, and span-mapping tests
+  (driven through an in-memory exporter; asserts span names + `gen_ai.*` attrs)
 
 ## Credits
 
-Built on [pi-otel](https://github.com/NikiforovAll/pi-otel) by nikiforovall
-(Apache-2.0). This package is MIT-licensed.
+Span/event mapping is modeled on
+[pydantic-ai](https://ai.pydantic.dev)'s OTel GenAI conventions and inspired by
+the [pi-otel](https://github.com/NikiforovAll/pi-otel) extension. MIT-licensed.

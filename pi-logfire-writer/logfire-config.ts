@@ -35,6 +35,8 @@ export interface LogfireWriterConfig {
 	protocol: "http/protobuf";
 	/** service.name resource attribute. */
 	serviceName: string;
+	/** How much GenAI content to record on spans. */
+	captureContent: "metadata_only" | "no_tool_content" | "full";
 }
 
 const REGION_BASE: Record<LogfireRegion, string> = {
@@ -93,6 +95,10 @@ export function resolveLogfireWriterConfig(
 
 	const serviceName = env.OTEL_SERVICE_NAME?.trim() || "pi";
 
+	const captureContent = normalizeCapture(
+		env.PI_LOGFIRE_WRITER_CAPTURE_CONTENT ?? env.PI_OTEL_CAPTURE_CONTENT,
+	);
+
 	const explicitlyDisabled = envFlagTrue(env.PI_LOGFIRE_WRITER_DISABLED);
 
 	let enabled = true;
@@ -114,43 +120,15 @@ export function resolveLogfireWriterConfig(
 		tracesUrl,
 		protocol: "http/protobuf",
 		serviceName,
+		captureContent,
 	};
 }
 
-/**
- * Build the OTLP environment variables that pi-otel reads. The Logfire write
- * token is placed in the `Authorization` header (Logfire expects the raw token,
- * not a `Bearer` prefix).
- */
-export function buildOtelEnv(config: LogfireWriterConfig): Record<string, string> {
-	const out: Record<string, string> = {
-		OTEL_EXPORTER_OTLP_ENDPOINT: config.tracesUrl,
-		OTEL_EXPORTER_OTLP_PROTOCOL: config.protocol,
-		OTEL_SERVICE_NAME: config.serviceName,
-	};
-	if (config.token) {
-		out.OTEL_EXPORTER_OTLP_HEADERS = `Authorization=${config.token}`;
-	}
-	return out;
-}
-
-/**
- * Apply the OTLP preset to a target env map (default process.env), WITHOUT
- * clobbering values the user has already set explicitly. Returns the keys that
- * were actually written.
- */
-export function applyOtelEnv(
-	config: LogfireWriterConfig,
-	target: NodeJS.ProcessEnv = process.env,
-): string[] {
-	const written: string[] = [];
-	for (const [key, value] of Object.entries(buildOtelEnv(config))) {
-		if (target[key] === undefined || target[key] === "") {
-			target[key] = value;
-			written.push(key);
-		}
-	}
-	return written;
+function normalizeCapture(v: string | undefined): "metadata_only" | "no_tool_content" | "full" {
+	const s = v?.trim().toLowerCase();
+	if (s === "full" || s === "true" || s === "1") return "full";
+	if (s === "no_tool_content") return "no_tool_content";
+	return "metadata_only";
 }
 
 /** Mask a token for safe display: keep the prefix, hide the secret tail. */
