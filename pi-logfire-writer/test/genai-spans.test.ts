@@ -44,6 +44,18 @@ test("buildAssistantParts produces pydantic-ai part shapes", () => {
 		{ type: "text", content: "answer" },
 		{ type: "tool_call", id: "tc1", name: "get_weather", arguments: '{"city":"Paris"}' },
 	]);
+	// pi's real thinking-part shape: text lives in `thinking`, not `text`/`content`.
+	const withThought = buildAssistantParts(
+		[
+			{ type: "thinking", thinking: "let me reason about this", thinkingSignature: "reasoning" },
+			{ type: "text", text: "the answer" },
+		],
+		true,
+	);
+	assert.deepEqual(withThought, [
+		{ type: "thinking", content: "let me reason about this" },
+		{ type: "text", content: "the answer" },
+	]);
 	// without tool content, the tool_call is kept but arguments dropped
 	const noArgs = buildAssistantParts(
 		[{ type: "toolCall", id: "tc1", name: "get_weather", arguments: { city: "Paris" } }],

@@ -166,11 +166,14 @@ export function buildAssistantParts(
 		if (!p || typeof p !== "object") continue;
 		if (p.type === "text" && typeof p.text === "string") {
 			parts.push({ type: "text", content: p.text });
-		} else if (
-			(p.type === "thinking" || p.type === "reasoning") &&
-			typeof (p.text ?? p.content) === "string"
-		) {
-			parts.push({ type: "thinking", content: (p.text ?? p.content) as string });
+		} else if (p.type === "thinking" || p.type === "reasoning") {
+			// pi stores reasoning text in a `thinking` field (with a separate
+			// `thinkingSignature`), not `text`/`content`. Read all variants so the
+			// "Thoughts" panel renders like pydantic-ai.
+			const thought = p.thinking ?? p.reasoning ?? p.text ?? p.content;
+			if (typeof thought === "string" && thought) {
+				parts.push({ type: "thinking", content: thought });
+			}
 		} else if (p.type === "toolCall" || p.type === "tool_call" || p.type === "tool_use") {
 			const id = p.id ?? p.toolCallId ?? p.tool_call_id ?? p.toolUseId;
 			const name = p.name ?? p.toolName ?? p.tool_name;
